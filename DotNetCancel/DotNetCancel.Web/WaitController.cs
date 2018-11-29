@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using DotNetCancel.Web.Models;
+using System.Data.SqlClient;
 
 namespace DotNetCancel.Web
 {
@@ -20,20 +21,39 @@ namespace DotNetCancel.Web
             _context = context;
         }
 
-        // GET: api/Waits
-        [HttpGet()]
-        public async Task<IActionResult> Wait()
+        [HttpGet("andcancel")]
+        public async Task<IActionResult> WaitAndCancel()
         {
+			string message = "";
 			using (var connection = _context.Database.GetDbConnection())
 			{
 				connection.Open();
 				using (var command = connection.CreateCommand())
 				{
+					// synthetic long-running query
 					command.CommandText = "waitfor delay '00:00:30'";
-					await command.ExecuteNonQueryAsync();
+					Task<int> task = command.ExecuteNonQueryAsync();
+
+					command.Cancel();
+
+					try
+					{
+						await task;
+						message = "Completed";
+					}
+					catch (SqlException ex)
+					{
+						var sqlErrors = ex.Errors;
+						if (!(sqlErrors.Count==2 && sqlErrors[1].Message=="Operation cancelled by user."))
+						{
+							throw;
+						}
+						message = "Cancelled";
+					}
 				}
 			}
-			return Ok();
-        }
-    }
+			return base.Ok(message);
+		}
+
+	}
 }
